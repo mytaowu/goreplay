@@ -1,26 +1,27 @@
 #!/usr/bin/env node
 const readline = require("readline");
-const StringDecoder = require("string_decoder").StringDecoder
+const StringDecoder = require("string_decoder").StringDecoder;
 
 const rl = readline.createInterface({
   input: process.stdin
 });
 
-var ignoreIds = new Set();
-var ignoreAddresses = "/api";
+const ignoreIds = new Set();
+const ignoreAddresses = "/api";
 const decoder = new StringDecoder("utf8");
 
 function convertHexString(hex) {
-  var bytes = [];
-  for (var i = 0; i < hex.length - 1; i += 2) {
+  const bytes = [];
+
+  for (let i = 0; i < hex.length - 1; i += 2) {
     bytes.push(parseInt(hex.substr(i, 2), 16));
   }
   return decoder.write(Buffer.from(bytes));
 }
 
 function log(output) {
-	console.error("===================");
-	console.error(output);
+  console.error("===================");
+  console.error(output);
 }
 
 function shouldOutputLine(request) {
@@ -53,5 +54,5 @@ rl.on("line", (input) => {
   console.log(input);
   if (shouldOutputLine(str)) {
     log(str);
-	}
+  }
 });

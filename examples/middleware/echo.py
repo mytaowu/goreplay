@@ -15,10 +15,7 @@ def log(msg):
     @type msg: str or byte string
     @param msg: Message to log to STDERR
     """
-    try:
-        msg = str(msg) + '\n'
-    except:
-        pass
+    msg = str(msg) + '\n'
     sys.stderr.write(msg)
     sys.stderr.flush()
 

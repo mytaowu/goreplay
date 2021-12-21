@@ -22,7 +22,7 @@ if err := listener.Listen(context.Background(), handler); err != nil {
 	 // handle error
 }
 // or
-errCh := listener.ListenBackground(context.Background(), handler) // runs in the background
+errCh := listener.ListenBackground(context.Background(), handler) // runs in the backgorund
 select {
 case err := <- errCh:
 	// handle error
