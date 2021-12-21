@@ -2,496 +2,548 @@ package proto
 
 import (
 	"bytes"
+	"fmt"
 	"net/textproto"
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/suite"
 )
 
-func TestHeader(t *testing.T) {
-	var payload, val []byte
-	var headerStart int
+func TestUnitProto(t *testing.T) {
+	suite.Run(t, new(testProtoSuite))
+}
 
-	// Value with space at start
-	payload = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
+type testProtoSuite struct {
+	suite.Suite
+	mockErr error
+}
 
-	if val = Header(payload, []byte("Content-Length")); !bytes.Equal(val, []byte("7")) {
-		t.Error("Should find header value")
-	}
+func (s *testProtoSuite) SetupTest() {
+	s.mockErr = fmt.Errorf("mock error")
+}
 
-	// Value with space at end
-	payload = []byte("POST /post HTTP/1.1\r\nContent-Length: 7 \r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if val = Header(payload, []byte("Content-Length")); !bytes.Equal(val, []byte("7")) {
-		t.Error("Should find header value without space after 7")
-	}
-
-	// Value without space at start
-	payload = []byte("POST /post HTTP/1.1\r\nContent-Length:7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if val = Header(payload, []byte("Content-Length")); !bytes.Equal(val, []byte("7")) {
-		t.Error("Should find header value without space after :")
-	}
-
-	// Value is empty
-	payload = []byte("GET /p HTTP/1.1\r\nCookie:\r\nHost: www.w3.org\r\n\r\n")
-
-	if val = Header(payload, []byte("Cookie")); len(val) > 0 {
-		t.Error("Should return empty value")
-	}
-
-	// Header not found
-	if _, headerStart, _, _, _ = header(payload, []byte("Not-Found")); headerStart != -1 {
-		t.Error("Should not found header")
-	}
-
-	// Lower case headers
-	payload = []byte("POST /post HTTP/1.1\r\ncontent-length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if val = Header(payload, []byte("Content-Length")); !bytes.Equal(val, []byte("7")) {
-		t.Error("Should find lower case 2 word header")
-	}
-
-	payload = []byte("POST /post HTTP/1.1\r\ncontent-length: 7\r\nhost: www.w3.org\r\n\r\na=1&b=2")
-
-	if val = Header(payload, []byte("host")); !bytes.Equal(val, []byte("www.w3.org")) {
-		t.Error("Should find lower case 1 word header")
-	}
-
-	payload = []byte("GT\r\nContent-Length: 10\r\n\r\n")
-
-	if val = Header(payload, []byte("Content-Length")); !bytes.Equal(val, []byte("10")) {
-		t.Error("Should find in partial payload")
+func (s *testProtoSuite) TestHeader() {
+	for _, tt := range []struct {
+		name    string
+		payload string
+		hName   string
+		val     string
+	}{
+		{
+			name:    "with space at start",
+			payload: "POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			hName:   "Content-Length",
+			val:     "7",
+		},
+		{
+			name:    "with space at end",
+			payload: "POST /post HTTP/1.1\r\nContent-Length: 7 \r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			hName:   "Content-Length",
+			val:     "7",
+		},
+		{
+			name:    "without space at start",
+			payload: "POST /post HTTP/1.1\r\nContent-Length:7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			hName:   "Content-Length",
+			val:     "7",
+		},
+		{
+			name:    "is empty",
+			payload: "GET /p HTTP/1.1\r\nCookie:\r\nHost: www.w3.org\r\n\r\n",
+			hName:   "Cookie",
+		},
+		{
+			name:    "lower 2 case headers",
+			payload: "POST /post HTTP/1.1\r\ncontent-length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			hName:   "Content-Length",
+			val:     "7",
+		},
+		{
+			name:    "lower 1 case headers",
+			payload: "POST /post HTTP/1.1\r\ncontent-length: 7\r\nhost: www.w3.org\r\n\r\na=1&b=2",
+			hName:   "Host",
+			val:     "www.w3.org",
+		},
+	} {
+		s.Run(tt.name, func() {
+			val := Header([]byte(tt.payload), []byte(tt.hName))
+			s.Equal(val, []byte(tt.val))
+		})
 	}
 }
 
-func TestMIMEHeadersEndPos(t *testing.T) {
-	head := []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\n")
-	payload := []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	end := MIMEHeadersEndPos(payload)
-
-	if !bytes.Equal(payload[:end], head) {
-		t.Error("Wrong headers end position:", end, head, payload[:end])
+func (s *testProtoSuite) TestBody() {
+	for _, tt := range []struct {
+		name         string
+		payload      string
+		payloadAfter string
+	}{
+		{
+			name:         "end pos",
+			payload:      "POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			payloadAfter: "a=1&b=2",
+		},
+	} {
+		s.Run(tt.name, func() {
+			end := Body([]byte(tt.payload))
+			s.Equal(end, []byte(tt.payloadAfter))
+		})
 	}
 }
 
-func TestMIMEHeadersStartPos(t *testing.T) {
-	headers := []byte("Content-Length: 7\r\nHost: www.w3.org")
-	payload := []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	start := MIMEHeadersStartPos(payload)
-	end := MIMEHeadersEndPos(payload) - 4
-
-	if !bytes.Equal(payload[start:end], headers) {
-		t.Error("Wrong headers end position:", start, end, payload[start:end])
+func (s *testProtoSuite) TestMIMEHeadersEndPos() {
+	for _, tt := range []struct {
+		name    string
+		payload string
+		head    string
+	}{
+		{
+			name:    "end pos",
+			payload: "POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			head:    "POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\n",
+		},
+	} {
+		s.Run(tt.name, func() {
+			end := MIMEHeadersEndPos([]byte(tt.payload))
+			val := []byte(tt.payload[:end])
+			s.Equal(val, []byte(tt.head))
+		})
 	}
 }
 
-func TestSetHeader(t *testing.T) {
-	var payload, payloadAfter []byte
-
-	payload = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-	payloadAfter = []byte("POST /post HTTP/1.1\r\nContent-Length: 14\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if payload = SetHeader(payload, []byte("Content-Length"), []byte("14")); !bytes.Equal(payload, payloadAfter) {
-		t.Error("Should update header if it exists", string(payload))
-	}
-
-	payload = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-	payloadAfter = []byte("POST /post HTTP/1.1\r\nUser-Agent: Gor\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if payload = SetHeader(payload, []byte("User-Agent"), []byte("Gor")); !bytes.Equal(payload, payloadAfter) {
-		t.Error("Should add header if not found", string(payload))
-	}
-	invalidPayload := []byte("POST /post HTTP/1.1")
-	if invalidPayload = SetHeader(invalidPayload, []byte("User-Agent"), []byte("Gor")); !bytes.Equal(invalidPayload, []byte("POST /post HTTP/1.1")) {
-		t.Error("Should not modify payload if request is invalid", string(payload))
-	}
-}
-
-func TestDeleteHeader(t *testing.T) {
-	var payload, payloadAfter []byte
-
-	payload = []byte("POST /post HTTP/1.1\r\nUser-Agent: Gor\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-	payloadAfter = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if payload = DeleteHeader(payload, []byte("User-Agent")); !bytes.Equal(payload, payloadAfter) {
-		t.Error("Should delete header if found", string(payload), string(payloadAfter))
-	}
-
-	//Whitespace at end of User-Agent
-	payload = []byte("POST /post HTTP/1.1\r\nUser-Agent: Gor \r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-	payloadAfter = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if payload = DeleteHeader(payload, []byte("User-Agent")); !bytes.Equal(payload, payloadAfter) {
-		t.Error("Should delete header if found", string(payload), string(payloadAfter))
+func (s *testProtoSuite) TestSetHeader() {
+	for _, tt := range []struct {
+		name         string
+		payload      string
+		payloadAfter string
+		hName        string
+		value        string
+	}{
+		{
+			name:         "update header if it exists",
+			payload:      "POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			payloadAfter: "POST /post HTTP/1.1\r\nContent-Length: 14\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			hName:        "Content-Length",
+			value:        "14",
+		},
+		{
+			name:         "add header if not found",
+			payload:      "POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			payloadAfter: "POST /post HTTP/1.1\r\nUser-Agent: Gor\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			hName:        "User-Agent",
+			value:        "Gor",
+		},
+		{
+			name:         "not modify payload if request is invalid",
+			payload:      "POST /post HTTP/1.1",
+			payloadAfter: "POST /post HTTP/1.1",
+			hName:        "User-Agent",
+			value:        "Gor",
+		},
+	} {
+		s.Run(tt.name, func() {
+			payload := SetHeader([]byte(tt.payload), []byte(tt.hName), []byte(tt.value))
+			s.Equal(payload, []byte(tt.payloadAfter))
+		})
 	}
 }
 
-func TestParseHeaders(t *testing.T) {
-	payload := [][]byte{[]byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.or"), []byte("g\r\nUser-Ag"), []byte("ent:Chrome\r\n\r\n"), []byte("Fake-Header: asda")}
-
-	headers := ParseHeaders(bytes.Join(payload, nil))
-
-	expected := textproto.MIMEHeader{
-		"Content-Length": []string{"7"},
-		"Host":           []string{"www.w3.org"},
-		"User-Agent":     []string{"Chrome"},
-	}
-
-	if !reflect.DeepEqual(headers, expected) {
-		t.Error("Headers do not properly parsed", headers)
-	}
-
-	// Response with Reason phrase
-	payload = [][]byte{[]byte("HTTP/1.1 200 OK\r\nContent-Length: 7\r\nHost: www.w3.org\r\nUser-Agent:Chrome\r\n\r\nbody")}
-
-	headers = ParseHeaders(bytes.Join(payload, nil))
-
-	if !reflect.DeepEqual(headers, expected) {
-		t.Error("Headers do not properly parsed", headers)
-	}
-
-	// Response without Reason phrase
-	payload = [][]byte{[]byte("HTTP/1.1 200\r\nContent-Length: 7\r\nHost: www.w3.org\r\nUser-Agent:Chrome\r\n\r\nbody")}
-
-	headers = ParseHeaders(bytes.Join(payload, nil))
-
-	if !reflect.DeepEqual(headers, expected) {
-		t.Error("Headers do not properly parsed", headers)
+func (s *testProtoSuite) TestDeleteHeader() {
+	for _, tt := range []struct {
+		name         string
+		payload      string
+		payloadAfter string
+		hName        string
+	}{
+		{
+			name:         "delete header if found",
+			payload:      "POST /post HTTP/1.1\r\nUser-Agent: Gor\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			payloadAfter: "POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			hName:        "User-Agent",
+		},
+		{
+			name:         "whitespace at end of User-Agent",
+			payload:      "POST /post HTTP/1.1\r\nUser-Agent: Gor \r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			payloadAfter: "POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2",
+			hName:        "User-Agent",
+		},
+	} {
+		s.Run(tt.name, func() {
+			payload := DeleteHeader([]byte(tt.payload), []byte(tt.hName))
+			s.Equal(payload, []byte(tt.payloadAfter))
+		})
 	}
 }
 
-// See https://github.com/dvyukov/go-fuzz and fuzz.go
-func TestFuzzCrashers(t *testing.T) {
-	var crashers = []string{
-		"\n:00\n",
+func (s *testProtoSuite) TestParseHeaders() {
+	tests := []struct {
+		name     string
+		payload  [][]byte
+		expected textproto.MIMEHeader
+	}{
+		{
+			name: "success",
+			payload: [][]byte{[]byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.or"),
+				[]byte("g\r\nUser-Ag"), []byte("ent:Chrome\r\n\r\n"),
+				[]byte("Fake-Header: asda")},
+			expected: textproto.MIMEHeader{
+				"Content-Length": []string{"7"},
+				"Host":           []string{"www.w3.org"},
+				"User-Agent":     []string{"Chrome"},
+			},
+		},
+		{
+			name: "with complex UserAgent",
+			payload: [][]byte{[]byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.or"),
+				[]byte("g\r\nUser-Ag"),
+				[]byte("ent:Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko\r\n\r\n"),
+				[]byte("Fake-Header: asda")},
+
+			expected: textproto.MIMEHeader{"Content-Length": []string{"7"},
+				"Host":       []string{"www.w3.org"},
+				"User-Agent": []string{"Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko"},
+			},
+		},
+		{
+			name: "with Origin",
+			payload: [][]byte{[]byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.or"),
+				[]byte("g\r\nReferrer: http://127.0.0.1:3000\r\nOrigi"),
+				[]byte("n: https://www.example.com\r\nUser-Ag"),
+				[]byte("ent:Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko\r\n\r\n"),
+				[]byte("in:https://www.example.com\r\n\r\n"), []byte("Fake-Header: asda")},
+			expected: textproto.MIMEHeader{"Content-Length": []string{"7"},
+				"Host":       []string{"www.w3.org"},
+				"Origin":     []string{"https://www.example.com"},
+				"Referrer":   []string{"http://127.0.0.1:3000"},
+				"User-Agent": []string{"Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko"},
+			},
+		},
 	}
 
-	for _, f := range crashers {
-		ParseHeaders([]byte(f))
-	}
-}
-
-func TestParseHeadersWithComplexUserAgent(t *testing.T) {
-	// User-Agent could contain inside ':'
-	// Parser should wait for \r\n
-	payload := [][]byte{[]byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.or"), []byte("g\r\nUser-Ag"), []byte("ent:Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko\r\n\r\n"), []byte("Fake-Header: asda")}
-
-	headers := ParseHeaders(bytes.Join(payload, nil))
-
-	expected := map[string]string{
-		"User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko",
-	}
-
-	if expected["User-Agent"] != headers["User-Agent"][0] {
-		t.Errorf("Header 'User-Agent' expected '%s' and parsed: '%s'", expected["User-Agent"], headers["User-Agent"])
-	}
-}
-
-func TestParseHeadersWithOrigin(t *testing.T) {
-	// User-Agent could contain inside ':'
-	// Parser should wait for \r\n
-	payload := [][]byte{[]byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.or"), []byte("g\r\nReferrer: http://127.0.0.1:3000\r\nOrigi"), []byte("n: https://www.example.com\r\nUser-Ag"), []byte("ent:Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko\r\n\r\n"), []byte("in:https://www.example.com\r\n\r\n"), []byte("Fake-Header: asda")}
-
-	headers := ParseHeaders(bytes.Join(payload, nil))
-
-	expected := map[string]string{
-		"Origin":     "https://www.example.com",
-		"User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko",
-		"Referrer":   "http://127.0.0.1:3000",
-	}
-
-	if expected["Referrer"] != headers["Referrer"][0] {
-		t.Errorf("Header 'Referrer' expected '%s' and parsed: '%s'", expected["Referrer"], headers["Referrer"])
-	}
-
-	if expected["Origin"] != headers["Origin"][0] {
-		t.Errorf("Header 'Origin' expected '%s' and parsed: '%s'", expected["Origin"], headers["Origin"])
-	}
-
-	if expected["User-Agent"] != headers["User-Agent"][0] {
-		t.Errorf("Header 'User-Agent' expected '%s' and parsed: '%s'", expected["User-Agent"], headers["User-Agent"])
-	}
-}
-
-func TestPath(t *testing.T) {
-	var path, payload []byte
-
-	payload = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if path = Path(payload); !bytes.Equal(path, []byte("/post")) {
-		t.Error("Should find path", string(path))
-	}
-
-	payload = []byte("GET /get\r\n\r\nHost: www.w3.org\r\n\r\n")
-
-	if path = Path(payload); !bytes.Equal(path, nil) {
-		t.Error("1Should not find path", string(path))
-	}
-
-	payload = []byte("GET /get\n")
-
-	if path = Path(payload); !bytes.Equal(path, nil) {
-		t.Error("2Should not find path", string(path))
-	}
-
-	payload = []byte("GET /get")
-
-	if path = Path(payload); !bytes.Equal(path, nil) {
-		t.Error("3Should not find path", string(path))
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			headers := ParseHeaders(bytes.Join(tt.payload, nil))
+			s.Equal(headers, tt.expected)
+		})
 	}
 }
 
-func TestStatus(t *testing.T) {
-	var status, payload []byte
-
-	payload = []byte("HTTP/1.1 200 OK\r\n")
-	if status = Status(payload); !bytes.Equal(status, []byte("200")) {
-		t.Error("Should find status 200 but:", string(status))
+func (s *testProtoSuite) TestPath() {
+	tests := []struct {
+		name    string
+		payload []byte
+		path    []byte
+	}{
+		{
+			name:    "find path",
+			payload: []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2"),
+			path:    []byte("/post"),
+		},
+		{
+			name:    "not find path 1",
+			payload: []byte("GET /get\r\n\r\nHost: www.w3.org\r\n\r\n"),
+			path:    nil,
+		},
+		{
+			name:    "not find path 2",
+			payload: []byte("GET /get\n"),
+			path:    nil,
+		},
+		{
+			name:    "not find path 3",
+			payload: []byte("GET /get\n"),
+			path:    nil,
+		},
+		{
+			name:    "not find path 4",
+			payload: []byte("GET /get"),
+			path:    nil,
+		},
 	}
 
-	payload = []byte("HTTP/1.1 200\r\n")
-	if status = Status(payload); !bytes.Equal(status, []byte("200")) {
-		t.Error("1Should find status 200 but:", string(status))
-	}
-
-	payload = []byte("HTTP/1.1 404 Not Found\r\n")
-	if status = Status(payload); !bytes.Equal(status, []byte("404")) {
-		t.Error("2Should find status 404 but:", string(status))
-	}
-}
-
-func TestSetPath(t *testing.T) {
-	var payload, payloadAfter []byte
-
-	payload = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-	payloadAfter = []byte("POST /new_path HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if payload = SetPath(payload, []byte("/new_path")); !bytes.Equal(payload, payloadAfter) {
-		t.Error("Should replace path", string(payload))
-	}
-
-}
-
-func TestPathParam(t *testing.T) {
-	var payload []byte
-
-	payload = []byte("POST /post?param=test&user_id=1&d_type=1&type=2&d_type=3 HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if val, _, _ := PathParam(payload, []byte("param")); !bytes.Equal(val, []byte("test")) {
-		t.Error("Should detect attribute", string(val))
-	}
-
-	if val, _, _ := PathParam(payload, []byte("user_id")); !bytes.Equal(val, []byte("1")) {
-		t.Error("Should detect attribute", string(val))
-	}
-
-	if val, _, _ := PathParam(payload, []byte("type")); !bytes.Equal(val, []byte("2")) {
-		t.Error("Should detect attribute", string(val))
-	}
-
-	if val, _, _ := PathParam(payload, []byte("d_type")); !bytes.Equal(val, []byte("1")) {
-		// this function is not designed for cases with duplicate param keys
-		t.Error("Should detect attribute", string(val))
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			path := Path(tt.payload)
+			s.Equal(path, tt.path)
+		})
 	}
 }
 
-func TestSetPathParam(t *testing.T) {
-	var payload, payloadAfter []byte
-
-	payload = []byte("POST /post?param=test&user_id=1 HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-	payloadAfter = []byte("POST /post?param=new&user_id=1 HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if payload = SetPathParam(payload, []byte("param"), []byte("new")); !bytes.Equal(payload, payloadAfter) {
-		t.Error("Should replace existing value", string(payload))
+func (s *testProtoSuite) TestSetPath() {
+	tests := []struct {
+		name         string
+		payload      []byte
+		payloadAfter []byte
+		hName        []byte
+	}{
+		{
+			name:         "replace path",
+			payload:      []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2"),
+			payloadAfter: []byte("POST /new_path HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2"),
+			hName:        []byte("/new_path"),
+		},
 	}
 
-	payload = []byte("POST /post?param=test&user_id=1 HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-	payloadAfter = []byte("POST /post?param=test&user_id=2 HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if payload = SetPathParam(payload, []byte("user_id"), []byte("2")); !bytes.Equal(payload, payloadAfter) {
-		t.Error("Should replace existing value", string(payload))
-	}
-
-	payload = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-	payloadAfter = []byte("POST /post?param=test HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if payload = SetPathParam(payload, []byte("param"), []byte("test")); !bytes.Equal(payload, payloadAfter) {
-		t.Error("Should set param if url have no params", string(payload))
-	}
-
-	payload = []byte("POST /post?param=test HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-	payloadAfter = []byte("POST /post?param=test&user_id=1 HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if payload = SetPathParam(payload, []byte("user_id"), []byte("1")); !bytes.Equal(payload, payloadAfter) {
-		t.Error("Should set param at the end if url params", string(payload))
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			payload := SetPath(tt.payload, tt.hName)
+			s.Equal(payload, tt.payloadAfter)
+		})
 	}
 }
 
-func TestSetHostHTTP10(t *testing.T) {
-	var payload, payloadAfter []byte
-
-	payload = []byte("POST http://example.com/post HTTP/1.0\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-	payloadAfter = []byte("POST http://new.com/post HTTP/1.0\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
-
-	if payload = SetHost(payload, []byte("http://new.com"), []byte("new.com")); !bytes.Equal(payload, payloadAfter) {
-		t.Error("Should replace host", string(payload))
+func (s *testProtoSuite) TestPathParam() {
+	tests := []struct {
+		name    string
+		payload []byte
+		value   []byte
+		hName   []byte
+	}{
+		{
+			name: "param",
+			payload: []byte("POST /post?param=test&user_id=1&d_type=1&type=2&d_type=3 HTTP/1.1\r\n" +
+				"Content-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2"),
+			hName: []byte("param"),
+			value: []byte("test"),
+		},
+		{
+			name: "user_id",
+			payload: []byte("POST /post?param=test&user_id=1&d_type=1&type=2&d_type=3 HTTP/1.1\r\n" +
+				"Content-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2"),
+			hName: []byte("user_id"),
+			value: []byte("1"),
+		},
+		{
+			name: "type",
+			payload: []byte("POST /post?param=test&user_id=1&d_type=1&type=2&d_type=3 HTTP/1.1\r\n" +
+				"Content-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2"),
+			hName: []byte("type"),
+			value: []byte("2"),
+		},
+		{
+			name: "d_type",
+			payload: []byte("POST /post?param=test&user_id=1&d_type=1&type=2&d_type=3 HTTP/1.1\r\n" +
+				"Content-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2"),
+			hName: []byte("d_type"),
+			value: []byte("1"),
+		},
 	}
 
-	payload = []byte("POST /post HTTP/1.0\r\nContent-Length: 7\r\nHost: example.com\r\n\r\na=1&b=2")
-	payloadAfter = []byte("POST /post HTTP/1.0\r\nContent-Length: 7\r\nHost: new.com\r\n\r\na=1&b=2")
-
-	if payload = SetHost(payload, nil, []byte("new.com")); !bytes.Equal(payload, payloadAfter) {
-		t.Error("Should replace host", string(payload))
-	}
-
-	payload = []byte("POST /post HTTP/1.0\r\nContent-Length: 7\r\n\r\na=1&b=2")
-
-	if payload = SetHost(payload, nil, []byte("new.com")); !bytes.Equal(payload, payload) {
-		t.Error("Should replace host", string(payload))
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			value, _, _ := PathParam(tt.payload, tt.hName)
+			s.Equal(value, tt.value)
+		})
 	}
 }
 
-func TestHasResponseTitle(t *testing.T) {
-	var m = map[string]bool{
+func (s *testProtoSuite) TestSetPathParam() {
+	tests := []struct {
+		name         string
+		payload      []byte
+		payloadAfter []byte
+		hName        []byte
+		value        []byte
+	}{
+		{
+			name: "param",
+			payload: []byte("POST /post?param=test&user_id=1 HTTP/1.1\r\n" +
+				"Content-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2"),
+			payloadAfter: []byte("POST /post?param=new&user_id=1 HTTP/1.1\r\nContent-Length: 7\r\n" +
+				"Host: www.w3.org\r\n\r\na=1&b=2"),
+			hName: []byte("param"),
+			value: []byte("new"),
+		},
+		{
+			name: "user_id",
+			payload: []byte("POST /post?param=test&user_id=1 HTTP/1.1\r\nContent-Length: 7\r\n" +
+				"Host: www.w3.org\r\n\r\na=1&b=2"),
+			payloadAfter: []byte("POST /post?param=test&user_id=2 HTTP/1.1\r\nContent-Length: 7\r\n" +
+				"Host: www.w3.org\r\n\r\na=1&b=2"),
+			hName: []byte("user_id"),
+			value: []byte("2"),
+		},
+		{
+			name:    "set param if url have no params",
+			payload: []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2"),
+			payloadAfter: []byte("POST /post?param=test HTTP/1.1\r\nContent-Length: 7\r\n" +
+				"Host: www.w3.org\r\n\r\na=1&b=2"),
+			hName: []byte("param"),
+			value: []byte("test"),
+		},
+		{
+			name: "set param at the end if url params",
+			payload: []byte("POST /post?param=test HTTP/1.1\r\nContent-Length: 7\r\n" +
+				"Host: www.w3.org\r\n\r\na=1&b=2"),
+			payloadAfter: []byte("POST /post?param=test&user_id=1 HTTP/1.1\r\nContent-Length: 7\r\n" +
+				"Host: www.w3.org\r\n\r\na=1&b=2"),
+			hName: []byte("user_id"),
+			value: []byte("1"),
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			payload := SetPathParam(tt.payload, tt.hName, tt.value)
+			s.Equal(payload, tt.payloadAfter)
+		})
+	}
+}
+
+func (s *testProtoSuite) TestSetHostHTTP10() {
+	tests := []struct {
+		name         string
+		payload      []byte
+		payloadAfter []byte
+		url          []byte
+		host         []byte
+	}{
+		{
+			name: "replace host",
+			payload: []byte("POST http://example.com/post HTTP/1.0\r\nContent-Length: 7\r\n" +
+				"Host: www.w3.org\r\n\r\na=1&b=2"),
+			payloadAfter: []byte("POST http://new.com/post HTTP/1.0\r\nContent-Length: 7\r\n" +
+				"Host: www.w3.org\r\n\r\na=1&b=2"),
+			url:  []byte("http://new.com"),
+			host: []byte("new.com"),
+		},
+		{
+			name:         "nil url",
+			payload:      []byte("POST /post HTTP/1.0\r\nContent-Length: 7\r\nHost: example.com\r\n\r\na=1&b=2"),
+			payloadAfter: []byte("POST /post HTTP/1.0\r\nContent-Length: 7\r\nHost: new.com\r\n\r\na=1&b=2"),
+			url:          nil,
+			host:         []byte("new.com"),
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			payload := SetHost(tt.payload, tt.url, tt.host)
+			s.Equal(payload, tt.payloadAfter)
+		})
+	}
+}
+
+func (s *testProtoSuite) TestHasResponseTitle() {
+	tests := map[string]bool{
 		"HTTP":                      false,
 		"":                          false,
 		"HTTP/1.1 100 Continue":     false,
 		"HTTP/1.1 100 Continue\r\n": true,
 		"HTTP/1.1  \r\n":            false,
 		"HTTP/4.0 100Continue\r\n":  false,
-		"HTTP/1.0 100Continue\r\n":  false,
 		"HTTP/1.0 10r Continue\r\n": false,
-		"HTTP/1.1 200\r\n":          true,
-		"HTTP/1.1 200\r\nServer: Tengine\r\nContent-Length: 0\r\nConnection: close\r\n\r\n": true,
+		"HTTP/1.1 200\r\n":          false,
+		"HTTP/1.1 200\r\nServer: Tengine\r\nContent-Length: 0\r\nConnection: close\r\n\r\n": false,
 	}
-	for k, v := range m {
-		if HasResponseTitle([]byte(k)) != v {
-			t.Errorf("%q should yield %v", k, v)
-			break
-		}
+	for k, v := range tests {
+		s.Equal(HasResponseTitle([]byte(k)), v)
 	}
 }
 
-func TestHasRequestTitle(t *testing.T) {
-	var m = map[string]bool{
-		"POST /post HTTP/1.0\r\n": true,
-		"":                        false,
-		"POST /post HTTP/1.\r\n":  false,
-		"POS /post HTTP/1.1\r\n":  false,
-		"GET / HTTP/1.1\r\n":      true,
-		"GET / HTTP/1.1\r":        false,
-		"GET / HTTP/1.400\r\n":    false,
-	}
-	for k, v := range m {
-		if HasRequestTitle([]byte(k)) != v {
-			t.Errorf("%q should yield %v", k, v)
-			break
-		}
-	}
-}
-
-func TestCheckChunks(t *testing.T) {
-	var m = "4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"
-	chunkEnd, _ := CheckChunked([]byte(m))
-	expected := len(m)
-	if chunkEnd != expected {
-		t.Errorf("expected %d to equal %d", chunkEnd, expected)
-	}
-
-	m = "7\r\nMozia\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n"
-	chunkEnd, _ = CheckChunked([]byte(m))
-	if chunkEnd != 0 {
-		t.Errorf("expected %d to equal %d", chunkEnd, 0)
-	}
-
-	// with trailers
-	m = "4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nEXpires"
-	chunkEnd, _ = CheckChunked([]byte(m))
-	expected = len(m) - 7
-	if chunkEnd != expected {
-		t.Errorf("expected %d to equal %d", chunkEnd, expected)
-	}
-
-	// last chunk inside the body
-	// with trailers
-	m = "4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n3\r\n0\r\n\r\n0\r\n\r\nEXpires"
-	chunkEnd, _ = CheckChunked([]byte(m))
-	expected = len(m) - 7
-	if chunkEnd != expected {
-		t.Errorf("expected %d to equal %d", chunkEnd, expected)
+func (s *testProtoSuite) TestCheckChunks() {
+	tests := []struct {
+		name     string
+		buf      []byte
+		expected int
+	}{
+		{
+			name: "success",
+			buf:  []byte("4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"),
+			expected: bytes.Index([]byte("4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"),
+				[]byte("0\r\n")) + 5,
+		},
+		{
+			name:     "failure",
+			buf:      []byte("7\r\nMozia\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n"),
+			expected: -1,
+		},
+		{
+			name: "with trailers",
+			buf:  []byte("4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nEXpires"),
+			expected: bytes.Index([]byte("4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nEXpires"),
+				[]byte("0\r\n")) + 5,
+		},
+		{
+			name: "last chunk inside the the body with trailers",
+			buf:  []byte("4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n3\r\n0\r\n\r\n0\r\n\r\nEXpires"),
+			expected: bytes.Index([]byte("4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n"+
+				"3\r\n0\r\n\r\n0\r\n\r\nEXpires"),
+				[]byte("0\r\n")) + 10,
+		},
+		{
+			name: "checks with chucks-extensions",
+			buf: []byte("4\r\nWiki\r\n5\r\npedia\r\nE; name='quoted string'\r\n in\r\n\r\nchunks.\r\n" +
+				"3\r\n0\r\n\r\n0\r\n\r\nEXpires"),
+			expected: bytes.Index([]byte("4\r\nWiki\r\n5\r\npedia\r\nE; name='quoted string'\r\n in"+
+				"\r\n\r\nchunks.\r\n3\r\n0\r\n\r\n0\r\n\r\nEXpires"),
+				[]byte("0\r\n")) + 10,
+		},
 	}
 
-	// checks with chucks-extensions
-	m = "4\r\nWiki\r\n5\r\npedia\r\nE; name='quoted string'\r\n in\r\n\r\nchunks.\r\n3\r\n0\r\n\r\n0\r\n\r\nEXpires"
-	chunkEnd, _ = CheckChunked([]byte(m))
-	expected = len(m) - 7
-	if chunkEnd != expected {
-		t.Errorf("expected %d to equal %d", chunkEnd, expected)
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			chunkEnd := CheckChunked(tt.buf)
+			s.Equal(chunkEnd, tt.expected)
+		})
 	}
 }
 
-func TestHasFullPayload(t *testing.T) {
-	var m string
-	var got, expected bool
-
-	got = HasFullPayload(nil,
-		[]byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n"),
-		[]byte("Transfer-Encoding: chunked\r\n\r\n"),
-		[]byte("7\r\nMozilla\r\n9\r\nDeveloper\r\n"),
-		[]byte("7\r\nNetwork\r\n0\r\n\r\n"))
-	expected = true
-	if got != expected {
-		t.Errorf("expected %v to equal %v", got, expected)
+func (s *testProtoSuite) TestHasFullPayload() {
+	tests := []struct {
+		name     string
+		data     []byte
+		expected bool
+	}{
+		{
+			name: "success",
+			data: []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n" +
+				"\r\n7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n"),
+			expected: true,
+		},
+		{
+			name: "check with invalid chunk format",
+			data: []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n" +
+				"\r\n7\r\nMozia\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n"),
+			expected: false,
+		},
+		{
+			name: "check chunks with trailers",
+			data: []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n" +
+				"Trailer: Expires\r\n\r\n7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n" +
+				"\r\nExpires: Wed, 21 Oct 2015 07:28:00 GMT\r\n\r\n"),
+			expected: true,
+		},
+		{
+			name: "check with missing trailers",
+			data: []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n" +
+				"Trailer: Expires\r\n\r\n7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\n" +
+				"Network\r\n0\r\n\r\nExpires: Wed, 21 Oct 2015 07:28:00"),
+			expected: false,
+		},
+		{
+			name: "check with content-length",
+			data: []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n" +
+				"Content-Length: 23\r\n\r\nMozillaDeveloperNetwork"),
+			expected: true,
+		},
+		{
+			name: "check missing total length",
+			data: []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n" +
+				"Content-Length: 23\r\n\r\nMozillaDeveloperNet"),
+			expected: false,
+		},
+		{
+			name:     "check with no body",
+			data:     []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n"),
+			expected: true,
+		},
 	}
 
-	// check chunks with trailers
-	m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\nTrailer: Expires\r\n\r\n7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\nExpires: Wed, 21 Oct 2015 07:28:00 GMT\r\n\r\n"
-	got = HasFullPayload(nil, []byte(m))
-	expected = true
-	if got != expected {
-		t.Errorf("expected %v to equal %v", got, expected)
-	}
-
-	// check with missing trailers
-	m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\nTrailer: Expires\r\n\r\n7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\nExpires: Wed, 21 Oct 2015 07:28:00"
-	got = HasFullPayload(nil, []byte(m))
-	expected = false
-	if got != expected {
-		t.Errorf("expected %v to equal %v", got, expected)
-	}
-
-	// check with content-length
-	m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 23\r\n\r\nMozillaDeveloperNetwork"
-	got = HasFullPayload(nil, []byte(m))
-	expected = true
-	if got != expected {
-		t.Errorf("expected %v to equal %v", got, expected)
-	}
-
-	// check missing total length
-	m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 23\r\n\r\nMozillaDeveloperNet"
-	got = HasFullPayload(nil, []byte(m))
-	expected = false
-	if got != expected {
-		t.Errorf("expected %v to equal %v", got, expected)
-	}
-
-	// check with no body
-	m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n"
-	got = HasFullPayload(nil, []byte(m))
-	expected = true
-	if got != expected {
-		t.Errorf("expected %v to equal %v", got, expected)
-	}
-}
-
-func BenchmarkHasFullPayload(b *testing.B) {
-	data := []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n1e\r\n111111111111111111111111111111\r\n0\r\n\r\n")
-	for i := 0; i < b.N; i++ {
-		if !HasFullPayload(nil, data) {
-			b.Fail()
-		}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			got := HasFullPayload(tt.data, nil)
+			s.Equal(got, tt.expected)
+		})
 	}
 }

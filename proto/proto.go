@@ -19,36 +19,38 @@ package proto
 import (
 	"bufio"
 	"bytes"
-	_ "fmt"
+	"fmt"
 	"net/http"
 	"net/textproto"
 	"strings"
 
-	"github.com/buger/goreplay/byteutils"
+	"goreplay/byteutils"
+	"goreplay/logger"
 )
 
-// CRLF In HTTP newline defined by 2 bytes (for both windows and *nix support)
-var CRLF = []byte("\r\n")
-
-// EmptyLine acts as separator: end of Headers or Body (in some cases)
-var EmptyLine = []byte("\r\n\r\n")
-
-// HeaderDelim Separator for Header line. Header looks like: `HeaderName: value`
-var HeaderDelim = []byte(": ")
+const (
+	// crlf In HTTP newline defined by 2 bytes (for both windows and *nix support)
+	crlf = "\r\n"
+	// emptyLine acts as separator: end of Headers or Body (in some cases)
+	emptyLine = "\r\n\r\n"
+	// headerDelim Separator for Header line. Header looks like: `HeaderName: value`
+	headerDelim = ": "
+)
 
 // MIMEHeadersEndPos finds end of the Headers section, which should end with empty line.
 func MIMEHeadersEndPos(payload []byte) int {
-	pos := bytes.Index(payload, EmptyLine)
+	pos := bytes.Index(payload, []byte(emptyLine))
 	if pos < 0 {
 		return -1
 	}
+
 	return pos + 4
 }
 
 // MIMEHeadersStartPos finds start of Headers section
 // It just finds position of second line (first contains location and method).
 func MIMEHeadersStartPos(payload []byte) int {
-	pos := bytes.Index(payload, CRLF)
+	pos := bytes.Index(payload, []byte(crlf))
 	if pos < 0 {
 		return -1
 	}
@@ -59,37 +61,32 @@ func MIMEHeadersStartPos(payload []byte) int {
 // If not found, value will be blank, and headerStart will be -1
 // Do not support multi-line headers.
 func header(payload []byte, name []byte) (value []byte, headerStart, headerEnd, valueStart, valueEnd int) {
-	if HasTitle(payload) {
-		headerStart = MIMEHeadersStartPos(payload)
-		if headerStart < 0 {
-			return
-		}
-	} else {
-		headerStart = 0
+	headerStart = MIMEHeadersStartPos(payload)
+	if headerStart < 0 {
+		return
 	}
 
 	var colonIndex int
 	for headerStart < len(payload) {
-		headerEnd = bytes.IndexByte(payload[headerStart:], '\n')
-		if headerEnd == -1 {
+		if headerEnd = bytes.IndexByte(payload[headerStart:], '\n'); headerEnd == -1 {
 			break
 		}
-		headerEnd += headerStart
-		colonIndex = bytes.IndexByte(payload[headerStart:headerEnd], ':')
-		if colonIndex == -1 {
-			// Malformed header, skip, most likely packet with partial headers
-			headerStart = headerEnd + 1
-			continue
-		}
-		colonIndex += headerStart
 
+		headerEnd += headerStart
+		if colonIndex = bytes.IndexByte(payload[headerStart:headerEnd], ':'); colonIndex == -1 {
+			break
+		}
+
+		colonIndex += headerStart
 		if bytes.EqualFold(payload[headerStart:colonIndex], name) {
 			valueStart = colonIndex + 1
 			valueEnd = headerEnd - 2
 			break
 		}
+
 		headerStart = headerEnd + 1 // move to the next header
 	}
+
 	if valueStart == 0 {
 		headerStart = -1
 		headerEnd = -1
@@ -97,7 +94,6 @@ func header(payload []byte, name []byte) (value []byte, headerStart, headerEnd, 
 		valueStart = -1
 		return
 	}
-
 	// ignore empty space after ':'
 	for valueStart < valueEnd {
 		if payload[valueStart] < 0x21 {
@@ -115,6 +111,7 @@ func header(payload []byte, name []byte) (value []byte, headerStart, headerEnd, 
 			break
 		}
 	}
+
 	value = payload[valueStart : valueEnd+1]
 
 	return
@@ -174,11 +171,12 @@ func AddHeader(payload, name, value []byte) []byte {
 	if mimeStart < 1 {
 		return payload
 	}
+
 	header := make([]byte, len(name)+2+len(value)+2)
 	copy(header[0:], name)
-	copy(header[len(name):], HeaderDelim)
+	copy(header[len(name):], headerDelim)
 	copy(header[len(name)+2:], value)
-	copy(header[len(header)-2:], CRLF)
+	copy(header[len(header)-2:], crlf)
 
 	return byteutils.Insert(payload, mimeStart, header)
 }
@@ -190,6 +188,7 @@ func DeleteHeader(payload, name []byte) []byte {
 	if hs != -1 {
 		return byteutils.Cut(payload, hs, he+1)
 	}
+
 	return payload
 }
 
@@ -199,14 +198,16 @@ func Body(payload []byte) []byte {
 	if pos == -1 || len(payload) <= pos {
 		return nil
 	}
+
 	return payload[pos:]
 }
 
-// Path takes payload and returns request path: Split(firstLine, ' ')[1]
+// Path takes payload and retuns request path: Split(firstLine, ' ')[1]
 func Path(payload []byte) []byte {
-	if !HasRequestTitle(payload) {
+	if !HasTitle(payload) {
 		return nil
 	}
+
 	start := bytes.IndexByte(payload, ' ') + 1
 	end := bytes.IndexByte(payload[start:], ' ')
 
@@ -218,6 +219,7 @@ func SetPath(payload, path []byte) []byte {
 	if !HasTitle(payload) {
 		return nil
 	}
+
 	start := bytes.IndexByte(payload, ' ') + 1
 	end := bytes.IndexByte(payload[start:], ' ')
 
@@ -228,7 +230,7 @@ func SetPath(payload, path []byte) []byte {
 func PathParam(payload, name []byte) (value []byte, valueStart, valueEnd int) {
 	path := Path(payload)
 
-	paramStart := -1
+	var paramStart int
 	if paramStart = bytes.Index(path, append([]byte{'&'}, append(name, '=')...)); paramStart == -1 {
 		if paramStart = bytes.Index(path, append([]byte{'?'}, append(name, '=')...)); paramStart == -1 {
 			return []byte(""), -1, -1
@@ -244,6 +246,7 @@ func PathParam(payload, name []byte) (value []byte, valueStart, valueEnd int) {
 	} else {
 		paramEnd += valueStart
 	}
+
 	return path[valueStart:paramEnd], valueStart, paramEnd
 }
 
@@ -288,7 +291,8 @@ func SetPathParam(payload, name, value []byte) []byte {
 // SetHost updates Host header for HTTP/1.1 or updates host in path for HTTP/1.0 or Proxy requests
 // Returns modified payload
 func SetHost(payload, url, host []byte) []byte {
-	// If this is HTTP 1.0 traffic or proxy traffic it may include host right into path variable, so instead of setting Host header we rewrite Path
+	// If this is HTTP 1.0 traffic or proxy traffic it may include host right into path variable,
+	// so instead of setting Host header we rewrite Path
 	// Fix for https://github.com/buger/gor/issues/156
 	if path := Path(payload); bytes.HasPrefix(path, []byte("http")) {
 		hostStart := bytes.IndexByte(path, ':') // : position "https?:"
@@ -318,12 +322,7 @@ func Method(payload []byte) []byte {
 // Status returns response status.
 // It happens to be in same position as request payload path
 func Status(payload []byte) []byte {
-	if !HasResponseTitle(payload) {
-		return nil
-	}
-	start := bytes.IndexByte(payload, ' ') + 1
-	// status code are in range 100-600
-	return payload[start : start+3]
+	return Path(payload)
 }
 
 // Methods holds the http methods ordered in ascending order
@@ -336,8 +335,8 @@ var Methods = [...]string{
 const (
 	//MinRequestCount GET / HTTP/1.1\r\n
 	MinRequestCount = 16
-	// MinResponseCount HTTP/1.1 200\r\n
-	MinResponseCount = 14
+	// MinResponseCount HTTP/1.1 200 OK\r\n
+	MinResponseCount = 17
 	// VersionLen HTTP/1.1
 	VersionLen = 8
 )
@@ -345,28 +344,37 @@ const (
 // HasResponseTitle reports whether this payload has an HTTP/1 response title
 func HasResponseTitle(payload []byte) bool {
 	s := byteutils.SliceToString(payload)
+	logger.Debug3("response:", s)
 	if len(s) < MinResponseCount {
 		return false
 	}
-	titleLen := bytes.Index(payload, CRLF)
+	titleLen := bytes.Index(payload, []byte(crlf))
 	if titleLen == -1 {
+		logger.Debug3(fmt.Sprintf("paload titleLen count %d", titleLen))
 		return false
 	}
 	major, minor, ok := http.ParseHTTPVersion(s[0:VersionLen])
-	if !(ok && major == 1 && (minor == 0 || minor == 1)) {
+	if !(checkHTTPVersion(major, minor, ok)) {
+		logger.Debug3(fmt.Sprintf("http versin: %d.%d", major, minor))
 		return false
 	}
 	if s[VersionLen] != ' ' {
 		return false
 	}
 	status, ok := atoI(payload[VersionLen+1:VersionLen+4], 10)
-	if !ok {
+	if !ok || s[VersionLen+4] != ' ' {
+		logger.Debug3(fmt.Sprintf("parse status failed: %d", status))
 		return false
 	}
-	// only validate status codes mentioned in rfc2616.
-	if http.StatusText(status) == "" {
+	statusText := http.StatusText(status)
+	if statusText == "" {
+		logger.Debug3(fmt.Sprintf("status text is empty: %d", status))
 		return false
 	}
+	if titleLen+len(crlf) > len(s) {
+		return false
+	}
+	logger.Debug3(fmt.Sprintf("'%s' == '%s'", string(payload[VersionLen+4]), string(payload[VersionLen+4])))
 	// handle cases from #875
 	return payload[VersionLen+4] == ' ' || payload[VersionLen+4] == '\r'
 }
@@ -377,7 +385,7 @@ func HasRequestTitle(payload []byte) bool {
 	if len(s) < MinRequestCount {
 		return false
 	}
-	titleLen := bytes.Index(payload, CRLF)
+	titleLen := bytes.Index(payload, []byte(crlf))
 	if titleLen == -1 {
 		return false
 	}
@@ -399,7 +407,7 @@ func HasRequestTitle(payload []byte) bool {
 		return false
 	}
 	major, minor, ok := http.ParseHTTPVersion(s[path+len(method)+2 : titleLen])
-	return ok && major == 1 && (minor == 0 || minor == 1)
+	return checkHTTPVersion(major, minor, ok)
 }
 
 // HasTitle reports if this payload has an http/1 title
@@ -407,184 +415,179 @@ func HasTitle(payload []byte) bool {
 	return HasRequestTitle(payload) || HasResponseTitle(payload)
 }
 
-// CheckChunked checks HTTP/1 chunked data integrity(https://tools.ietf.org/html/rfc7230#section-4.1)
-// and returns the length of total valid scanned chunks(including chunk size, extensions and CRLFs) and
-// full is true if all chunks was scanned.
-func CheckChunked(bufs ...[]byte) (chunkEnd int, full bool) {
-	var buf []byte
-	if len(bufs) > 0 {
-		buf = bufs[0]
+// checkHTTPVersion
+func checkHTTPVersion(major int, minor int, ok bool) bool {
+	if ok && major == 1 && (minor == 0 || minor == 1) {
+		return true
 	}
-	for chunkEnd < len(buf) {
-		sz := bytes.IndexByte(buf[chunkEnd:], '\r')
+
+	return false
+}
+
+// CheckChunked checks HTTP/1 chunked data integrity and return the final index
+// of chunks(index after '0\r\n\r\n') or -1 if there is missing data
+// or there is bad format
+func CheckChunked(buf []byte) (chunkEnd int) {
+	var (
+		ok     bool
+		chkLen int
+		sz     int
+		ext    int
+	)
+	logger.Debug3("chunk buf:", string(buf))
+	for {
+		sz = bytes.IndexByte(buf[chunkEnd:], '\r')
 		if sz < 1 {
-			break
+			logger.Debug3("chunk is not end of \\r")
+			return -1
 		}
-		// don't parse chunk extensions https://github.com/golang/go/issues/13135.
-		// chunks extensions are no longer a thing, but we do check if the byte
-		// following the parsed hex number is ';'
-		sz += chunkEnd
-		chkLen, ok := atoI(buf[chunkEnd:sz], 16)
-		if !ok && bytes.IndexByte(buf[chunkEnd:sz], ';') < 1 {
-			break
+		// ignoring chunks extensions https://github.com/golang/go/issues/13135
+		// but chunks extensions are no longer a thing
+		ext = bytes.IndexByte(buf[chunkEnd:chunkEnd+sz], ';')
+		if ext < 0 {
+			ext = sz
 		}
-		sz++ // + '\n'
-		// total length = SIZE + CRLF + OCTETS + CRLF
-		allChunk := sz + chkLen + 2
-		if allChunk >= len(buf) ||
-			buf[sz]&buf[allChunk] != '\n' ||
-			buf[allChunk-1] != '\r' {
-			break
+
+		chkLen, ok = atoI(buf[chunkEnd:chunkEnd+ext], 16)
+		if !ok {
+			return -1
 		}
-		chunkEnd = allChunk + 1
+
+		chunkEnd += sz + 2
 		if chkLen == 0 {
-			full = true
-			break
+			if !bytes.Equal(buf[chunkEnd:chunkEnd+2], []byte(crlf)) {
+				return -1
+			}
+			return chunkEnd + 2
 		}
+		// ideally chunck length and at least len("\r\n0\r\n\r\n")
+		if len(buf[chunkEnd:]) < chkLen+7 {
+			return -1
+		}
+
+		chunkEnd += chkLen
+		// chunks must end with crlf
+		if !bytes.Equal(buf[chunkEnd:chunkEnd+2], []byte(crlf)) {
+			return -1
+		}
+
+		chunkEnd += 2
 	}
-	return
 }
 
-// ProtocolStateSetter is an interface used to provide protocol state for future use
-type ProtocolStateSetter interface {
-	SetProtocolState(interface{})
-	ProtocolState() interface{}
+// Feedback is an interface used to provide feedback or store dummy data for future use
+type Feedback interface {
+	SetFeedback(interface{})
+	Feedback() interface{}
 }
 
-type HTTPState struct {
-	Body           int // body index
-	HeaderStart    int
-	HeaderEnd      int
-	HeaderParsed   bool // we checked necessary headers
-	HasFullPayload bool // all chunks has been parsed
-	IsChunked      bool // Transfer-Encoding: chunked
-	BodyLen        int  // Content-Length's value
-	HasTrailer     bool // Trailer header?
-	Continue100    bool
+type feedback struct {
+	body     int // body index
+	hdrStart int
+	headers  textproto.MIMEHeader
 }
 
-// HasFullPayload checks if this message has full or valid payloads and returns true.
-// Message param is optional but recommended on cases where 'data' is storing
-// partial-to-full stream of bytes(packets).
-func HasFullPayload(m ProtocolStateSetter, payloads ...[]byte) bool {
-	var state *HTTPState
-	if m != nil {
-		state, _ = m.ProtocolState().(*HTTPState)
-	}
-	if state == nil {
-		state = new(HTTPState)
-		if m != nil {
-			m.SetProtocolState(state)
-		}
-	}
-	if state.HeaderStart < 1 {
-		for _, data := range payloads {
-			state.HeaderStart = MIMEHeadersStartPos(data)
-			if state.HeaderStart < 0 {
-				return false
-			} else {
-				break
-			}
-		}
-	}
-
-	if state.Body < 1 || state.HeaderEnd < 1 {
-		var pos int
-		for _, data := range payloads {
-			endPos := MIMEHeadersEndPos(data)
-			if endPos < 0 {
-				pos += len(data)
-			} else {
-				pos += endPos
-				state.HeaderEnd = pos
-			}
-
-			if endPos > 0 {
-				state.Body = pos
-				break
-			}
-		}
-	}
-
-	if state.HeaderEnd < 1 {
+// HasFullPayload reports if this http has full payloads
+func HasFullPayload(data []byte, f Feedback) bool {
+	var feed *feedback
+	var ok bool
+	var body []byte
+	feed, ok = generateFeedback(data, f)
+	if !ok {
+		logger.Warn("generateFeedback failed.")
 		return false
 	}
 
-	if !state.HeaderParsed {
-		var pos int
-		for _, data := range payloads {
-			chunked := Header(data, []byte("Transfer-Encoding"))
-
-			if len(chunked) > 0 && bytes.Index(data, []byte("chunked")) > 0 {
-				state.IsChunked = true
-				// trailers are generally not allowed in non-chunks body
-				state.HasTrailer = len(Header(data, []byte("Trailer"))) > 0
-			} else {
-				contentLen := Header(data, []byte("Content-Length"))
-				state.BodyLen, _ = atoI(contentLen, 10)
-			}
-
-			pos += len(data)
-
-			if string(Header(data, []byte("Expect"))) == "100-continue" {
-				state.Continue100 = true
-			}
-
-			if state.BodyLen > 0 || pos >= state.Body {
-				state.HeaderParsed = true
-				break
-			}
-		}
+	if len(data) > feed.body {
+		body = data[feed.body:]
 	}
 
-	bodyLen := 0
-	for _, data := range payloads {
-		bodyLen += len(data)
-	}
-	bodyLen -= state.Body
-
-	if state.IsChunked {
-		// check chunks
-		if bodyLen < 1 {
-			return false
-		}
-
-		// check trailer headers
-		if state.HasTrailer {
-			if bytes.HasSuffix(payloads[len(payloads)-1], []byte("\r\n\r\n")) {
-				return true
-			}
-		} else {
-			if bytes.HasSuffix(payloads[len(payloads)-1], []byte("0\r\n\r\n")) {
-				state.HasFullPayload = true
-				return true
-			}
-		}
-
-		return false
+	if feed.headers.Get("Transfer-Encoding") == "chunked" {
+		return checkChunks(body, feed.headers)
 	}
 
 	// check for content-length header
-	return state.BodyLen == bodyLen
+	if header := feed.headers.Get("Content-Length"); header != "" {
+		num, ok := atoI([]byte(header), 10)
+		// trailers are generally not allowed in non-chunks body
+		return ok && num == len(body)
+	}
+
+	return true
+}
+
+// generateFeedback generate *feedback struct
+func generateFeedback(data []byte, f Feedback) (*feedback, bool) {
+	var feed *feedback
+	var ok bool
+	if f != nil {
+		feed, ok = f.Feedback().(*feedback)
+	}
+
+	if !ok {
+		feed = new(feedback)
+	}
+
+	if f != nil {
+		f.SetFeedback(feed)
+	}
+
+	if feed.hdrStart < 1 {
+		if feed.hdrStart = MIMEHeadersStartPos(data); feed.hdrStart < 0 {
+			return nil, false
+		}
+	}
+
+	if feed.body < 1 {
+		if feed.body = MIMEHeadersEndPos(data); feed.body < 0 {
+			return nil, false
+		}
+	}
+
+	if feed.headers == nil {
+		if feed.headers = GetHeaders(data[feed.hdrStart:feed.body]); feed.headers == nil {
+			return nil, false
+		}
+	}
+
+	return feed, true
+}
+
+// check chunks
+func checkChunks(body []byte, headers textproto.MIMEHeader) bool {
+	if len(body) < 1 {
+		return false
+	}
+
+	var chunkEnd int
+	if chunkEnd = CheckChunked(body); chunkEnd < 1 {
+		return false
+	}
+	// check trailer headers
+	if headers.Get("Trailer") == "" {
+		return true
+	}
+	// trailer headers(whether chunked or plain) should end with empty line
+	return len(body) > chunkEnd && MIMEHeadersEndPos(body[chunkEnd:]) != -1
 }
 
 // this works with positive integers
 func atoI(s []byte, base int) (num int, ok bool) {
 	var v int
-	ok = true
 	for i := 0; i < len(s); i++ {
 		if s[i] > 127 {
-			ok = false
-			break
+			return 0, false
 		}
+
 		v = int(hexTable[s[i]])
 		if v >= base || (v == 0 && s[i] != '0') {
-			ok = false
-			break
+			return 0, false
 		}
+
 		num = (num * base) + v
 	}
-	return
+
+	return num, true
 }
 
 var hexTable = [128]byte{

@@ -1,5 +1,11 @@
 /*
-This middleware made for auth system that randomly generate access tokens, which used later for accessing secure content. Since there is no pre-defined token value, naive approach without middleware (or if middleware use only request payloads) will fail, because replayed server have own tokens, not synced with origin. To fix this, our middleware should take in account responses of replayed and origin server, store `originalToken -> replayedToken` aliases and rewrite all requests using this token to use replayed alias. See `middleware_test.go#TestTokenMiddleware` test for examples of using this middleware.
+This middleware made for auth system that randomly generate access tokens,
+which used later for accessing secure content. Since there is no pre-defined token value,
+naive approach without middleware (or if middleware use only request payloads) will fail,
+because replayed server have own tokens, not synced with origin. To fix this,
+our middleware should take in account responses of replayed and origin server,
+store `originalToken -> replayedToken` aliases and rewrite all requests using this token to use replayed alias.
+See `middleware_test.go#TestTokenMiddleware` test for examples of using this middleware.
 
 How middleware works:
 
@@ -26,7 +32,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/buger/goreplay/proto"
+	"goreplay/proto"
 )
 
 // requestID -> originalToken
@@ -59,7 +65,8 @@ func process(buf []byte) {
 	headerSize := bytes.IndexByte(buf, '\n') + 1
 	header := buf[:headerSize-1]
 
-	// Header contains space separated values of: request type, request id, and request start time (or round-trip time for responses)
+	// Header contains space separated values of: request type, request id,
+	// and request start time (or round-trip time for responses)
 	meta := bytes.Split(header, []byte(" "))
 	// For each request you should receive 3 payloads (request, response, replayed response) with same request id
 	reqID := string(meta[1])
@@ -114,8 +121,9 @@ func encode(buf []byte) []byte {
 	return dst
 }
 
+// Debug print log
 func Debug(args ...interface{}) {
-	if os.Getenv("GOR_TEST") == "" { // if we are not testing
+	if os.Getenv("GOR_TEST") != "" { // if we are not testing
 		fmt.Fprint(os.Stderr, "[DEBUG][TOKEN-MOD] ")
 		fmt.Fprintln(os.Stderr, args...)
 	}

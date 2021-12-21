@@ -1,5 +1,3 @@
-// https://github.com/google/gopacket/blob/403ca653c4/pcapgo/read.go
-
 package capture
 
 import (
@@ -11,6 +9,8 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )
+
+// https://github.com/google/gopacket/blob/403ca653c4/pcapgo/read.go
 
 // Writer wraps an underlying io.Writer to write packet data in PCAP
 // format.  See http://wiki.wireshark.org/Development/LibpcapFileFormat
@@ -54,7 +54,7 @@ func NewWriterNanos(w io.Writer) *Writer {
 // NewWriter returns a new writer object, for writing packet data out
 // to the given writer.  If this is a new empty writer (as opposed to
 // an append), you must call WriteFileHeader before WritePacket.
-// Packet timestamps are written with microsecond precision.
+// Packet timestamps are written witn microsecond precision.
 //
 //  // Write a new file:
 //  f, _ := os.Create("/tmp/file.pcap")
