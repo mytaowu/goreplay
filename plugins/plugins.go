@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"goreplay/config"
+	"goreplay/logger"
 )
 
 // Settings plugins` settings
@@ -35,6 +36,9 @@ type Settings struct {
 
 	InputUDP       config.MultiOption `json:"input-udp"`
 	InputUDPConfig config.UDPInputConfig
+
+	MiddlewareGrpc       bool `json:"middle-grpc"`
+	MiddlewareGrpcConfig config.MiddlewareGrpcConfig
 }
 
 // Message represents data accross plugins
@@ -43,6 +47,12 @@ type Message struct {
 	Data         []byte // actual data
 	ConnectionID string
 	SrcAddr      string // 记录来源的IP地址, 在包为response包的时候赋值, value为DstAddr
+}
+
+// Middleware is an interface for middleware plugins
+type MiddlewareFun interface {
+	SetNextMidWare(MiddlewareFun)
+	MidWareHandle(*Message, error) (msg *Message, err error)
 }
 
 // PluginReader is an interface for input plugins
@@ -63,9 +73,10 @@ type PluginReadWriter interface {
 
 // InOutPlugins struct for holding references to plugins
 type InOutPlugins struct {
-	Inputs  []PluginReader
-	Outputs []PluginWriter
-	All     []interface{}
+	Inputs      []PluginReader
+	Outputs     []PluginWriter
+	Middlewares []MiddlewareFun // middleware 可以理解成input的一层代理
+	All         []interface{}
 }
 
 // extractLimitOptions detects if plugin get called with limiter support
@@ -117,6 +128,10 @@ func (p *InOutPlugins) registerPlugin(constructor interface{}, options ...interf
 		p.Outputs = append(p.Outputs, w)
 	}
 
+	if m, ok := plugin.(MiddlewareFun); ok {
+		p.Middlewares = append(p.Middlewares, m)
+	}
+
 	p.All = append(p.All, plugin)
 
 }
@@ -143,6 +158,8 @@ func InitPluginSettings() Settings {
 		ModifierConfig:        config.Settings.ModifierConfig,
 		InputUDP:              config.Settings.InputUDP,
 		InputUDPConfig:        config.Settings.InputUDPConfig,
+		MiddlewareGrpc:        config.Settings.MiddlewareGrpc,
+		MiddlewareGrpcConfig:  config.Settings.MiddlewareGrpcConfig,
 	}
 
 	return pluginSettings
@@ -191,6 +208,11 @@ func NewPlugins(settings Settings) *InOutPlugins {
 
 	for _, options := range settings.InputUDP {
 		plugins.registerPlugin(NewUDPInput, options, settings.InputUDPConfig)
+	}
+
+	if settings.MiddlewareGrpc {
+		logger.Info("----执行到grpc函数创建")
+		plugins.registerPlugin(NewGrpcMiddleWare, "", &settings.MiddlewareGrpcConfig)
 	}
 
 	return plugins

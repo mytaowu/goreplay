@@ -13,7 +13,6 @@ import (
 	"goreplay/http"
 	"goreplay/logger"
 	"goreplay/plugins"
-	"goreplay/plugins/middleware"
 	"goreplay/protocol"
 	"goreplay/size"
 )
@@ -48,15 +47,20 @@ func (e *Emitter) Start(inOutPlugins *plugins.InOutPlugins, middlewareCmd string
 
 	e.inOutPlugins = inOutPlugins
 
-	if middlewareCmd != "" {
-		midWare := middleware.NewMiddleware(middlewareCmd)
-		for _, in := range inOutPlugins.Inputs {
-			midWare.ReadFrom(in)
-		}
+	if len(inOutPlugins.Middlewares) > 0 {
+		// midWare := middleware.NewMiddleware(middlewareCmd)
+		// for _, in := range inOutPlugins.Inputs {
+		// 	midWare.ReadFrom(in)
+		// }
 
-		e.inOutPlugins.Inputs = append(e.inOutPlugins.Inputs, midWare)
-		e.inOutPlugins.All = append(e.inOutPlugins.All, midWare)
-		e.Add(1)
+		// e.inOutPlugins.Inputs = append(e.inOutPlugins.Inputs, midWare)
+		// e.inOutPlugins.All = append(e.inOutPlugins.All, midWare)
+		// e.Add(1)
+		// go func() {
+		// 	defer e.Done()
+		// 	e.copyMulty(midWare, inOutPlugins.Outputs...)
+		// }()
+		midWare := plugins.NewMiddleware(inOutPlugins.Inputs, inOutPlugins.Middlewares)
 		go func() {
 			defer e.Done()
 			e.copyMulty(midWare, inOutPlugins.Outputs...)
@@ -69,6 +73,7 @@ func (e *Emitter) Start(inOutPlugins *plugins.InOutPlugins, middlewareCmd string
 		e.Add(1)
 		go func(in plugins.PluginReader) {
 			defer e.Done()
+			// 这里进行处理
 			e.copyMulty(in, inOutPlugins.Outputs...)
 		}(in)
 	}

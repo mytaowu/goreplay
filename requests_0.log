@@ -1,0 +1,6 @@
+1 5e25f3dc16ed270685714748 1652019547276916340 4308
+{"body":"eyJuYW1lIjoi5oiR5piv5a6i5oi356uv77yM5q2j5Zyo6K+35rGC5pyN5Yqh5Zmo77yB77yBODg5OSIsImFnZSI6MTh9","header":{":authority":"106.55.107.76:8380",":method":"POST",":path":"/hello.Greeter/SayHello",":scheme":"http","_log_replay_trace_id":"cc3e7555-6179-47a3-a79d-9ec5e8ab05b4","content-type":"application/grpc","stream_id":"1","te":"trailers","user-agent":"grpc-go/1.46.0"}}
+🐵🙈🙉
+2 5e25f3dc16ed270685714748 1652019547277532279 0
+{"body":"eyJtZXNzYWdlIjoi6K+35rGCc2VydmVy56uv5oiQ5YqfISIsImFnZSI6MTh9","header":{":status":"200","_log_replay_trace_id":"f17675c5-50fb-47b6-9a05-1c6d954060ec","content-type":"application/grpc","grpc-message":"","grpc-status":"0","stream_id":"1"}}
+🐵🙈🙉

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"fmt"
-	"goreplay/codec"
 	"io"
 	"os"
 	"path/filepath"
@@ -203,7 +202,6 @@ func (o *FileOutput) updateName() {
 
 // PluginWrite writes message to this plugin
 func (o *FileOutput) PluginWrite(msg *Message) (int, error) {
-	codec.GetHeaderCodec(codec.GrpcName).Decode(msg.Data, msg.ConnectionID)
 	var (
 		length     int
 		tempLength int

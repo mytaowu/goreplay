@@ -87,6 +87,9 @@ type AppSettings struct {
 
 	InputUDP       MultiOption `json:"input-udp"`
 	InputUDPConfig UDPInputConfig
+
+	MiddlewareGrpc       bool `json:"middle-grpc"`
+	MiddlewareGrpcConfig MiddlewareGrpcConfig
 }
 
 // Settings holds Gor configuration
@@ -132,6 +135,7 @@ func init() {
 	setDefault()
 	// setInputUDPConfig
 	setInputUDPConfig()
+	setGrpcMidWareConfig()
 
 	fmt.Println("setting is init. verbose:", Settings.Verbose)
 }
@@ -443,5 +447,11 @@ func setInputUDPConfig() {
 		"If turned on gorepaly-udp will track responses in addition to requests")
 	flag.StringVar(&Settings.InputUDPConfig.Protocol, "input-udp-protocol", "",
 		"Specify application protocol of intercepted traffic.")
+}
 
+func setGrpcMidWareConfig() {
+	flag.BoolVar(&Settings.MiddlewareGrpc, "middle-grpc", false,
+		"enable grpc decode")
+	flag.StringVar(&Settings.MiddlewareGrpcConfig.MiddleGrpcProtoFile, "middle-grpc-proto-file", "",
+		"proto file path")
 }

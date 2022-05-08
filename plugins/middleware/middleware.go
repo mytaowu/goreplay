@@ -4,6 +4,7 @@ package middleware
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -134,6 +135,10 @@ func (m *Middleware) PluginRead() (msg *plugins.Message, err error) {
 		return nil, errors.ErrorStopped
 	case msg = <-m.data:
 	}
+
+	logger.Info("-------执行到中间件的代码")
+	logger.Info(fmt.Sprintf("meta data: %s", base64.StdEncoding.EncodeToString(msg.Meta)))
+	logger.Info(fmt.Sprintf("meta data: %s", base64.StdEncoding.EncodeToString(msg.Data)))
 
 	return
 }

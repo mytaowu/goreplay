@@ -86,3 +86,8 @@ type BinaryOutputConfig struct {
 func (conf *LogReplayOutputConfig) GatewayHost() string {
 	return conf.GatewayAddr
 }
+
+// MiddlewareGrpcConfig grpc中间件配置
+type MiddlewareGrpcConfig struct {
+	MiddleGrpcProtoFile string `json:"middle-grpc-proto-file"` // MiddleGrpcProtoFile 指定grpc协议文件路径
+}
