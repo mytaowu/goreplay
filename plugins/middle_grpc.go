@@ -84,12 +84,15 @@ func (g *grpcMiddleWare) MidWareHandle(msg *Message,
 	logger.Info("path: %s", header[":path"])
 
 	methodDesc := g.pbdesc.GetMethodDesc(header[":path"])
+
 	if methodDesc == nil {
 		v, ok := cache.Get(fmt.Sprintf(readMetaHeadersKey, header["stream_id"]))
 		if ok {
 			methodDesc = v.(*desc.MethodDescriptor)
 		}
 	}
+
+	logger.Info(fmt.Sprintf("---header[stream_id]: %s, methodDesc: %v", header["stream_id"], methodDesc))
 
 	if methodDesc == nil {
 		if g.next != nil {
@@ -118,6 +121,8 @@ func (g *grpcMiddleWare) MidWareHandle(msg *Message,
 	cache.Add(fmt.Sprintf(readMetaHeadersKey, header["stream_id"]), methodDesc)
 
 	msg.Data, _ = json.Marshal(res)
+	logger.Info(fmt.Sprintf("----处理之后的结果: %s", string(msg.Data)))
+
 	if g.next != nil {
 		return g.next.MidWareHandle(msg, err)
 	}

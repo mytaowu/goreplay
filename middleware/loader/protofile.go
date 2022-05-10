@@ -18,7 +18,7 @@ import (
 const (
 	zipExt    = ".zip"       // 压缩包文件后缀
 	protoExt  = ".proto"     // 协议文件后缀
-	unzipPath = "./tempfile" // 解压协议文件的路径
+	unzipPath = "./protobuf" // 解压协议文件的路径
 )
 
 type Pbdesc struct {
@@ -37,7 +37,7 @@ func NewPbDesc(filePath string) *Pbdesc {
 	Parser := protoparse.Parser{}
 	//加载并解析 proto文件,得到一组 FileDescriptor
 	descs, err := Parser.ParseFiles(paths...)
-	Parser.ParseFiles()
+	// Parser.ParseFiles()
 	if err != nil {
 		logger.Error(fmt.Sprintf("ParseFiles err=%v", err))
 		return res
@@ -50,7 +50,8 @@ func NewPbDesc(filePath string) *Pbdesc {
 			mList := sList[i].GetMethods()
 			for j := 0; j < len(mList); j++ {
 				fullName := mList[j].GetFullyQualifiedName()
-				res.methodCache[fullName] = mList[i]
+				res.methodCache[fullName] = mList[j]
+				logger.Info(fmt.Sprintf("-----fuillname: %s, method: %v", fullName, mList[j]))
 			}
 		}
 	}
